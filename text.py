@@ -163,7 +163,7 @@ class text:
     def GenText(self, start_index=None, start_pos=None):
         index = self.cur_chapter_index if start_index is None else start_index
         pos = self.cur_chapter_pos if start_pos is None else start_pos
-        while True:
+        while index < len(self.book_conf["chapterInfo"]):
             chapter_content = self._get_book_content(index)
             logger.info(f"Generating text from chapter {self._get_title(index)}")
             if not chapter_content:

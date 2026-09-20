@@ -67,7 +67,7 @@
             if (playing || currentItem !== null || buffer.length === 0) return;
             currentItem = buffer.shift();
             playing = true;
-            if (textSyncEl.checked && currentItem.text) {
+            if (textSyncEl.checked && currentItem.text && !currentItem.isEnd) {
                 document.getElementById('displayText').textContent = currentItem.text;
             }
             var url = URL.createObjectURL(currentItem.blob);
@@ -84,19 +84,21 @@
         audioPlayer.addEventListener('ended', function() {
             if (!currentItem) return;
             URL.revokeObjectURL(audioPlayer.src);
-            socket.emit('chunk_played', {
-                chapterIndex: currentItem.chapterIndex,
-                position: currentItem.position
-            });
+            var item = currentItem;
             currentItem = null;
             playing = false;
+            if (item.isEnd) return;  // 书末语音提示播完即止
+            socket.emit('chunk_played', {
+                chapterIndex: item.chapterIndex,
+                position: item.position
+            });
             playNext();
             requestIfNeeded();
         });
 
         // 暂停/切走页面时也上报进度, 避免中途暂停后重载丢进度
         function reportProgress() {
-            if (currentItem) {
+            if (currentItem && !currentItem.isEnd) {
                 socket.emit('chunk_played', {
                     chapterIndex: currentItem.chapterIndex,
                     position: currentItem.position
@@ -112,8 +114,15 @@
 
         audioPlayer.addEventListener('error', function() {
             // 解码失败: 跳过该块(不回报进度, 避免跳读)
+            var item = currentItem;
             currentItem = null;
             playing = false;
+            if (item && item.isEnd) {
+                bookEnded = true;
+                pendingRequests = 0;
+                statusEl.textContent = '全书朗读完毕';
+                return;
+            }
             playNext();
             requestIfNeeded();
         });
@@ -133,13 +142,21 @@
             var blob = data.audio instanceof Blob
                 ? data.audio
                 : new Blob([data.audio], { type: 'audio/wav' });
-            buffer.push({
+            var item = {
                 blob: blob,
                 chapterIndex: data.chapterIndex,
                 position: data.position,
-                text: data.text
-            });
-            statusEl.textContent = '播放中 · 第' + (data.chapterIndex + 1) + '章';
+                text: data.text,
+                isEnd: !!data.isEnd
+            };
+            buffer.push(item);
+            if (item.isEnd) {
+                bookEnded = true;
+                pendingRequests = 0;
+                statusEl.textContent = '全书朗读完毕';
+            } else {
+                statusEl.textContent = '播放中 · 第' + (data.chapterIndex + 1) + '章';
+            }
             playNext();
             requestIfNeeded();
         });

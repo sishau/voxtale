@@ -24,8 +24,18 @@ logger.info("Server initialized")
 TTS.initialize()
 logger.info("TTS initialized")
 
+END_PROMPT_TEXT = "全书播放完毕"
+
+
+def _with_end_prompt(gen):
+    """Wrap a text generator so book-end yields one voice prompt chunk, then ends."""
+    for item in gen:
+        yield item
+    yield {"text": END_PROMPT_TEXT, "chapterIndex": 0, "position": 0, "isEnd": True}
+
+
 # Independent HTTP /tts stream (not shared with socket sessions)
-tts_gen = SERVER.GenText()
+tts_gen = _with_end_prompt(SERVER.GenText())
 
 # Per-socket-connection text generator (keyed by request.sid)
 session_gens = {}
@@ -57,7 +67,7 @@ def _session_gen():
     sid = request.sid
     gen = session_gens.get(sid)
     if gen is None:
-        gen = SERVER.GenText()
+        gen = _with_end_prompt(SERVER.GenText())
         session_gens[sid] = gen
     return gen
 
@@ -84,6 +94,7 @@ def request_next_audio():
         "position": gen_text["position"],
         "audio": gen_text["audio"],
         "text": gen_text["text"],
+        "isEnd": gen_text.get("isEnd", False),
     })
 
 
@@ -125,7 +136,8 @@ def tts():
     if gen_text is None:
         return Response(status=204)
     logger.debug(f"TTS audio chapter{gen_text['chapterIndex']} position{gen_text['position']}")
-    SERVER.save_book_progress(gen_text["chapterIndex"], gen_text["position"])
+    if not gen_text.get("isEnd"):
+        SERVER.save_book_progress(gen_text["chapterIndex"], gen_text["position"])
     return Response(gen_text["audio"], mimetype='audio/wav')
 
 
