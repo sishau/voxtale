@@ -39,16 +39,18 @@ socketio = SocketIO(app)
 
 
 def _next_audio(gen):
-    """Pull one text chunk from the generator and synthesize it. Returns None on end/failure."""
-    try:
-        gen_text = next(gen)
-    except StopIteration:
-        return None
-    gen_text["audio"] = TTS.synthesize(gen_text["text"])
-    if gen_text["audio"] is None:
-        logger.error("TTS returned empty audio, skip")
-        return None
-    return gen_text
+    """Pull one text chunk from the generator and synthesize it. Returns None on end."""
+    while True:
+        try:
+            gen_text = next(gen)
+        except StopIteration:
+            return None
+        audio = TTS.synthesize(gen_text["text"])
+        if audio is None:
+            logger.warning(f"TTS returned empty audio, skip chunk chapter{gen_text['chapterIndex']} position{gen_text['position']}")
+            continue
+        gen_text["audio"] = audio
+        return gen_text
 
 
 def _session_gen():

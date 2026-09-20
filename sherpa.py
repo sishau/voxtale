@@ -53,6 +53,10 @@ class sherpa:
         audio = self.tts_server.generate(text, sid=sid, speed=speed)
         if audio is None:
             return None
+        # sherpa-onnx returns a result with empty samples and sample_rate=0
+        # when the text cannot be converted to token IDs (e.g. an all-OOV line)
+        if audio.samples is None or len(audio.samples) == 0 or audio.sample_rate <= 0:
+            return None
         buffer = io.BytesIO()
         sf.write(buffer, audio.samples, samplerate=audio.sample_rate, format="WAV")
         buffer.seek(0)
