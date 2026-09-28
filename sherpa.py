@@ -20,7 +20,7 @@ class sherpa:
             'model': os.path.join(model_dir, conf['model']),
             'vocoder': os.path.join(model_dir, conf['vocoder']),
             'tokens': os.path.join(model_dir, conf['tokens']),
-            'dict_dir': os.path.join(model_dir, conf['dict_dir']),
+            'dict_dir': os.path.join(model_dir, conf['dict_dir']) if conf.get('dict_dir') else '',
         }
         lexicon = ",".join(os.path.join(model_dir, item.strip()) for item in conf['lexicon'].split(','))
         rule_fsts = ",".join(os.path.join(model_dir, item.strip()) for item in conf['rule_fsts'].split(','))
@@ -30,7 +30,7 @@ class sherpa:
             vocoder=model_config['vocoder'],
             lexicon=lexicon,
             tokens=model_config['tokens'],
-            data_dir="",
+            data_dir=os.path.join(model_dir, conf['data_dir']) if conf.get('data_dir') else '',
             dict_dir=model_config['dict_dir'],
         )
         tts_config = sherpa_onnx.OfflineTtsConfig(
