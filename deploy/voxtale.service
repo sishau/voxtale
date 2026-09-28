@@ -5,8 +5,8 @@ After=network.target
 [Service]
 Type=simple
 User=your_username
-WorkingDirectory=%h/workspace/heartale
-ExecStart=%h/workspace/heartale/venv/bin/python %h/workspace/heartale/app.py
+WorkingDirectory=%h/workspace/voxtale
+ExecStart=%h/workspace/voxtale/venv/bin/python %h/workspace/voxtale/app.py
 Restart=on-failure
 RestartSec=5
 
