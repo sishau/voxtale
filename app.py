@@ -3,6 +3,8 @@
 
 import os
 import threading
+from urllib.parse import quote
+
 import yaml
 from flask import Flask, request, Response, render_template, session
 from flask_socketio import SocketIO, emit
@@ -132,13 +134,27 @@ def index():
 @app.route('/tts')
 def tts():
     global tts_gen
+    # GET /tts?index=N&pos=M: 从指定章节/位置重新开始, 供悬浮窗等客户端做上一章/下一章/断点续播
+    index = request.args.get('index')
+    pos = request.args.get('pos', default=0, type=int)
+    if index is not None:
+        tts_gen = _with_end_prompt(SERVER.GenText(int(index), pos))
+        logger.info(f"TTS stream restarted at chapter {index}, pos {pos}")
     gen_text = _next_audio(tts_gen)
     if gen_text is None:
         return Response(status=204)
     logger.debug(f"TTS audio chapter{gen_text['chapterIndex']} position{gen_text['position']}")
     if not gen_text.get("isEnd"):
         SERVER.save_book_progress(gen_text["chapterIndex"], gen_text["position"])
-    return Response(gen_text["audio"], mimetype='audio/wav')
+    resp = Response(gen_text["audio"], mimetype='audio/wav')
+    # 文本 URL 编码后放入头, 规避 HTTP 头不支持非 Latin-1 字符的限制
+    resp.headers["X-Chapter-Index"] = str(gen_text["chapterIndex"])
+    resp.headers["X-Position"] = str(gen_text["position"])
+    resp.headers["X-Text"] = quote(gen_text["text"])
+    resp.headers["X-Chapter-Title"] = quote(SERVER._get_title(gen_text["chapterIndex"]))
+    resp.headers["X-Total"] = str(len(SERVER.chapter_list))
+    resp.headers["X-Is-End"] = "1" if gen_text.get("isEnd") else "0"
+    return resp
 
 
 @app.route('/save', methods=['GET', 'POST'])
