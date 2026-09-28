@@ -130,3 +130,7 @@ sudo ufw allow 28081/tcp
 - 进度文件保存在 `logs/text_<md5>.json`，按书籍 md5 区分，记录章/节位置
 - 进度磁盘写入默认节流 10 分钟；断连或进程退出时强制落盘
 - 每个浏览器会话拥有独立阅读游标，刷新页面从各自上次位置继续
+
+## 致谢
+
+本项目最初 fork 自 [yuhldr/heartale](https://github.com/yuhldr/heartale)，感谢原作者 [yuhldr](https://github.com/yuhldr) 的开源工作。当前仓库在其基础上进行了较大重构与扩展（TTS 流程改进、Rust 桌面悬浮客户端等），已作为独立项目发展，与上游仓库不再保持同步。
