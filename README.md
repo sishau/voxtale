@@ -1,6 +1,6 @@
 # Heartale
 
-一个自托管的 TTS 有声书 Web 服务：读取本地 txt 小说，通过 [sherpa-onnx](https://github.com/k2-fsa/sherpa-onnx)（Matcha-TTS 中文语音）合成语音，用浏览器在线听书。
+一个自托管的 TTS 有声书服务：读取本地 txt 小说，通过 [sherpa-onnx](https://github.com/k2-fsa/sherpa-onnx)（Matcha-TTS 中文语音）合成语音。既可以用浏览器在线听书，也附带一个 Rust 编写的 Windows 桌面悬浮窗客户端。
 
 ## 功能特性
 
@@ -10,13 +10,15 @@
 - **播放进度自动保存**：按「实际播放完成」回报进度，断线/退出自动落盘；磁盘写入节流（默认 10 分钟）
 - **预取缓冲**：客户端最多预取 3 个音频块，保证连续播放、避免卡顿
 - **文本同步显示**：可选边听边看当前文本
+- **桌面悬浮窗客户端**：Rust (eframe/egui) 编写的 Windows 悬浮条，无边框半透明、背景自适应配色、全局热键隐藏/唤出
 - **多端并发**：每个浏览器连接独立的阅读游标，互不干扰
 
 ## 架构
 
 ```
-浏览器 (templates/index.html)
-   │  Socket.IO (binary audio)
+浏览器 (templates/index.html) ────┐
+                                  ├─  Socket.IO / HTTP (binary WAV)
+桌面悬浮窗 (heartale-client.exe) ─┘
    ▼
 app.py  ── Flask + Flask-SocketIO
    ├── text.py     # 文本源：章节解析、流式文本生成、进度管理
@@ -45,6 +47,10 @@ heartale/
 │   └── socket.io.js        # 本地化的 socket.io 客户端（离线可用）
 ├── deploy/
 │   └── heartale.service    # systemd 单元文件
+├── client/                 # 桌面客户端可执行文件与本地配置（exe/config.json 不入库）
+├── heartale-client/        # Rust 桌面悬浮客户端源码
+│   ├── Cargo.toml
+│   └── src/                # main.rs / player.rs / bg_detect.rs / reporter.rs / config.rs
 ├── requirements.txt        # Python 依赖（版本固定）
 ├── models/                 # TTS 模型目录（不入库，手动放置）
 ├── storage/                # 书籍 txt 文件（不入库）
@@ -119,10 +125,31 @@ sudo systemctl enable --now heartale
 sudo ufw allow 28081/tcp
 ```
 
+## 桌面悬浮客户端（Rust）
+
+`heartale-client/` 是一个 Windows 桌面悬浮窗客户端（eframe/egui），配合服务端边听边看：
+
+- 无边框半透明圆角条，UI 随窗口尺寸等比缩放（高度最小可压到 18 物理px）
+- **背景自适应配色**：启动时及按 A 按钮时抓屏检测亮度，浅色桌面配深字、深色桌面配浅字
+- 长文本自动分页轮播；3 段预取保证连续播放
+- 播放进度通过 socket.io 回报（`chunk_played`），与服务端阅读游标保持一致
+- `Ctrl+Alt+H` 全局热键隐藏/唤出；窗口边缘可拖拽缩放
+- 上一章/下一章/断点续播使用 `GET /tts?index=N&pos=M` 与 `X-Chapter-*` 响应头
+
+构建：
+
+```bash
+cd heartale-client
+cargo build --release   # 产物: target/release/heartale-client.exe
+```
+
+首次运行后在 exe 同目录生成 `config.json`（服务器地址与窗口位置，不入库）。
+
 ## HTTP 接口（补充）
 
 - `GET /index` — 播放器页面
-- `GET /tts` — 独立音频流（每次返回下一个 WAV 块，供非浏览器客户端使用）
+- `GET /tts` — 独立音频流（每次返回下一个 WAV 块，响应头附带 X-Chapter-Index / X-Position / X-Text / X-Chapter-Title / X-Total / X-Is-End 元数据）
+- `GET /tts?index=N&pos=M` — 从指定章节/位置重新开始（供悬浮窗上一章/下一章/续播）
 - `GET|POST /save?index=N&pos=M` — 手动保存进度
 
 ## 说明
