@@ -32,8 +32,8 @@ use windows::Win32::Graphics::Dwm::{
 };
 use windows::Win32::UI::Controls::MARGINS;
 use windows::Win32::UI::WindowsAndMessaging::{
-    FindWindowW, GetSystemMetrics, SetForegroundWindow, ShowWindow, SM_CXSCREEN, SM_CYSCREEN,
-    SW_HIDE, SW_SHOW,
+    FindWindowW, GetSystemMetrics, IsWindowVisible, SetForegroundWindow, ShowWindow, SM_CXSCREEN,
+    SM_CYSCREEN, SW_HIDE, SW_SHOW,
 };
 
 use config::Config;
@@ -359,12 +359,10 @@ impl eframe::App for App {
             }
         }
         // ---- 全局热键 Ctrl+Alt+H ----
+        // 窗口的实际隐藏/显示已由 hotkey 线程直接用 Win32 ShowWindow 完成,
+        // 这里仅镜像状态 (隐藏后 update() 可能不再运行, 不能依赖这里做切换)
         while self.hotkey_rx.try_recv().is_ok() {
             self.visible = !self.visible;
-            ctx.send_viewport_cmd(ViewportCommand::Visible(self.visible));
-            if self.visible {
-                ctx.send_viewport_cmd(ViewportCommand::Focus);
-            }
         }
         // ---- 内容随窗口高度缩放: ppp = 物理高 / 110 ----
         // 关键: set_pixels_per_point 下一帧才生效, 且生效当帧 viewport 坐标仍按旧系数换算。
@@ -661,6 +659,20 @@ fn main() -> eframe::Result<()> {
             use global_hotkey::GlobalHotKeyEvent;
             for ev in GlobalHotKeyEvent::receiver() {
                 if ev.state == global_hotkey::HotKeyState::Pressed {
+                    // 必须在本线程直接用 Win32 切换显示, 不能发给 update() 处理:
+                    // 窗口隐藏后 winit 停止派发重绘, update() 不再运行,
+                    // 发过去的事件永远没机会被消费 -> 窗口唤不回 (踩过的坑)
+                    if let Some(raw) = find_hwnd() {
+                        let hwnd = windows::Win32::Foundation::HWND(raw as *mut _);
+                        unsafe {
+                            if IsWindowVisible(hwnd).as_bool() {
+                                let _ = ShowWindow(hwnd, SW_HIDE);
+                            } else {
+                                let _ = ShowWindow(hwnd, SW_SHOW);
+                                let _ = SetForegroundWindow(hwnd);
+                            }
+                        }
+                    }
                     let _ = hotkey_tx.send(());
                 }
             }
