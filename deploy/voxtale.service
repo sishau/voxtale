@@ -1,5 +1,5 @@
 [Unit]
-Description=Heartale TTS audiobook web service
+Description=Voxtale TTS audiobook web service
 After=network.target
 
 [Service]
