@@ -46,7 +46,7 @@ session_gens = {}
 session_locks = {}
 
 app = Flask(__name__)
-app.config['SECRET_KEY'] = '~heartale!'
+app.config['SECRET_KEY'] = '~voxtale!'
 socketio = SocketIO(app)
 
 

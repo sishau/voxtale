@@ -1,4 +1,4 @@
-//! Heartale 悬浮朗读窗 (Rust 版, 移植自 client/reader.py)
+//! Voxtale 悬浮朗读窗 (Rust 版, 移植自 client/reader.py)
 //!
 //! - 无边框 + 透明 + 置顶, 窗口内文字/图标随高度等比缩放 (pixels_per_point = h/110)
 //! - 界面低调: 半透明圆角面板, 中性灰字色 (不与背景完全相反), A 按钮重新采背景调字色
@@ -55,7 +55,7 @@ const RESIZE_EDGE_PX: f32 = 6.0; // 边缘缩放命中带宽度, 物理 px (无�
 /// 注意: FindWindowW(类名, 窗口名) — 第一个参数是窗口类名, 标题必须传第二个参数
 fn find_hwnd() -> Option<isize> {
     unsafe {
-        FindWindowW(PCWSTR::null(), w!("heartale"))
+        FindWindowW(PCWSTR::null(), w!("voxtale"))
             .ok()
             .map(|h| h.0 as isize)
     }
@@ -741,7 +741,7 @@ fn main() -> eframe::Result<()> {
         ..Default::default()
     };
     eframe::run_native(
-        "heartale",
+        "voxtale",
         options,
         Box::new(move |cc| Ok(Box::new(App::new(cc, cfg, light, hotkey_rx, bg_rx, bg_tx)))),
     )

@@ -1,4 +1,4 @@
-# Heartale 客户端 Rust 迁移方案
+# Voxtale 客户端 Rust 迁移方案
 
 目标: 把 `client/reader.py` (PySide6) 迁移为单一原生 exe, 功能与 web 端 `templates/index.html` 一致。
 
@@ -19,7 +19,7 @@
 ## 2. 工程结构
 
 ```
-heartale-client/
+voxtale-client/
 ├── Cargo.toml
 └── src/
     ├── main.rs        # 入口: 加载配置 → 建窗口 → 启动 player/hotkey

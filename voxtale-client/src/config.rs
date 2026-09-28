@@ -1,6 +1,6 @@
 //! config.json 读写 (与 Python 版格式一致): server + window {x,y,w,h}
 //!
-//! 路径: exe 同目录 config.json, 可用环境变量 HEARTALE_CONFIG 覆盖;
+//! 路径: exe 同目录 config.json, 可用环境变量 VOXTALE_CONFIG 覆盖;
 //! 保存采用 tmp + rename 原子写。
 
 use serde::{Deserialize, Serialize};
@@ -48,7 +48,7 @@ impl Default for Config {
 }
 
 pub fn config_path() -> PathBuf {
-    match std::env::var("HEARTALE_CONFIG") {
+    match std::env::var("VOXTALE_CONFIG") {
         Ok(p) => PathBuf::from(p),
         Err(_) => std::env::current_exe()
             .ok()

@@ -1,4 +1,4 @@
-# Heartale
+# Voxtale
 
 一个自托管的 TTS 有声书服务：读取本地 txt 小说，通过 [sherpa-onnx](https://github.com/k2-fsa/sherpa-onnx)（Matcha-TTS 中文语音）合成语音。既可以用浏览器在线听书，也附带一个 Rust 编写的 Windows 桌面悬浮窗客户端。
 
@@ -18,7 +18,7 @@
 ```
 浏览器 (templates/index.html) ────┐
                                   ├─  Socket.IO / HTTP (binary WAV)
-桌面悬浮窗 (heartale-client.exe) ─┘
+桌面悬浮窗 (voxtale-client.exe) ─┘
    ▼
 app.py  ── Flask + Flask-SocketIO
    ├── text.py     # 文本源：章节解析、流式文本生成、进度管理
@@ -33,7 +33,7 @@ app.py  ── Flask + Flask-SocketIO
 ## 目录结构
 
 ```
-heartale/
+voxtale/
 ├── app.py                  # 入口：Flask + SocketIO 路由与事件
 ├── text.py                 # txt 文本源：章节解析、流式生成、进度保存
 ├── sherpa.py               # sherpa-onnx Matcha TTS 引擎
@@ -46,9 +46,9 @@ heartale/
 ├── static/vendor/
 │   └── socket.io.js        # 本地化的 socket.io 客户端（离线可用）
 ├── deploy/
-│   └── heartale.service    # systemd 单元文件
+│   └── voxtale.service    # systemd 单元文件
 ├── client/                 # 桌面客户端可执行文件与本地配置（exe/config.json 不入库）
-├── heartale-client/        # Rust 桌面悬浮客户端源码
+├── voxtale-client/        # Rust 桌面悬浮客户端源码
 │   ├── Cargo.toml
 │   └── src/                # main.rs / player.rs / bg_detect.rs / reporter.rs / config.rs
 ├── requirements.txt        # Python 依赖（版本固定）
@@ -111,12 +111,12 @@ python app.py
 
 ## 部署（systemd）
 
-内网长期运行推荐注册为 systemd 服务。先将 `deploy/heartale.service` 中的 `User=your_username` 改为你的实际用户名（`%h` 会自动展开为对应家目录），然后：
+内网长期运行推荐注册为 systemd 服务。先将 `deploy/voxtale.service` 中的 `User=your_username` 改为你的实际用户名（`%h` 会自动展开为对应家目录），然后：
 
 ```bash
-sudo cp deploy/heartale.service /etc/systemd/system/
+sudo cp deploy/voxtale.service /etc/systemd/system/
 sudo systemctl daemon-reload
-sudo systemctl enable --now heartale
+sudo systemctl enable --now voxtale
 ```
 
 如果启用了 ufw 防火墙，放行端口：
@@ -127,7 +127,7 @@ sudo ufw allow 28081/tcp
 
 ## 桌面悬浮客户端（Rust）
 
-`heartale-client/` 是一个 Windows 桌面悬浮窗客户端（eframe/egui），配合服务端边听边看：
+`voxtale-client/` 是一个 Windows 桌面悬浮窗客户端（eframe/egui），配合服务端边听边看：
 
 - 无边框半透明圆角条，UI 随窗口尺寸等比缩放（高度最小可压到 18 物理px）
 - **背景自适应配色**：启动时及按 A 按钮时抓屏检测亮度，浅色桌面配深字、深色桌面配浅字
@@ -139,8 +139,8 @@ sudo ufw allow 28081/tcp
 构建：
 
 ```bash
-cd heartale-client
-cargo build --release   # 产物: target/release/heartale-client.exe
+cd voxtale-client
+cargo build --release   # 产物: target/release/voxtale-client.exe
 ```
 
 首次运行后在 exe 同目录生成 `config.json`（服务器地址与窗口位置，不入库）。

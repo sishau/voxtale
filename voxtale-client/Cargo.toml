@@ -1,8 +1,8 @@
 [package]
-name = "heartale-client"
+name = "voxtale-client"
 version = "0.1.0"
 edition = "2021"
-description = "Heartale 悬浮朗读窗 (Rust 版)"
+description = "Voxtale 悬浮朗读窗 (Rust 版)"
 
 [dependencies]
 eframe = "0.29"
