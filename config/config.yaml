@@ -1,5 +1,5 @@
 server:
-  path: ~/workspace/heartale/storage/text/temp.txt
+  path: ~/workspace/voxtale/storage/text/temp.txt
   encoding: utf-8
 tts:
   model_folder: ./models/matcha-icefall-zh-baker
