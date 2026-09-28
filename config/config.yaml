@@ -11,7 +11,7 @@ tts:
   tokens: tokens.txt
   rule_fsts: phone-zh.fst, number-zh.fst, date-zh.fst
   sid: 0
-  speed: 1.1
+  speed: 1.15
   # --- zh-only baker (rollback: comment block above, uncomment below) ---
   # model_folder: ./models/matcha-icefall-zh-baker
   # model: model-steps-3.onnx
