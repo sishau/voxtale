@@ -34,3 +34,8 @@ read_book2
 read_time.json
 models/
 storage/
+
+# Rust client build artifacts & local config
+heartale-client/target/
+client/config.json
+*.exe
