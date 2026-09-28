@@ -43,11 +43,8 @@ voxtale/
 │   └── logger.yaml         # 日志格式与输出配置
 ├── templates/
 │   └── index.html          # 播放器页面
-├── static/vendor/
-│   └── socket.io.js        # 本地化的 socket.io 客户端（离线可用）
 ├── deploy/
 │   └── voxtale.service    # systemd 单元文件
-├── client/                 # 桌面客户端可执行文件与本地配置（exe/config.json 不入库）
 ├── voxtale-client/        # Rust 桌面悬浮客户端源码
 │   ├── Cargo.toml
 │   └── src/                # main.rs / player.rs / bg_detect.rs / reporter.rs / config.rs
