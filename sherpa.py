@@ -16,30 +16,45 @@ class sherpa:
     def initialize(self):
         conf = self.conf
         model_dir = conf['model_folder']
-        model_config = {
-            'model': os.path.join(model_dir, conf['model']),
-            'vocoder': os.path.join(model_dir, conf['vocoder']),
-            'tokens': os.path.join(model_dir, conf['tokens']),
-            'dict_dir': os.path.join(model_dir, conf['dict_dir']) if conf.get('dict_dir') else '',
-        }
         lexicon = ",".join(os.path.join(model_dir, item.strip()) for item in conf['lexicon'].split(','))
         rule_fsts = ",".join(os.path.join(model_dir, item.strip()) for item in conf['rule_fsts'].split(','))
+        num_threads = int(conf.get('num_threads', 1))
 
-        matcha = sherpa_onnx.OfflineTtsMatchaModelConfig(
-            acoustic_model=model_config['model'],
-            vocoder=model_config['vocoder'],
-            lexicon=lexicon,
-            tokens=model_config['tokens'],
-            data_dir=os.path.join(model_dir, conf['data_dir']) if conf.get('data_dir') else '',
-            dict_dir=model_config['dict_dir'],
-        )
-        tts_config = sherpa_onnx.OfflineTtsConfig(
-            model=sherpa_onnx.OfflineTtsModelConfig(
+        if conf.get('voices'):
+            # kokoro architecture: model.onnx + voices.bin + dual lexicon + espeak-ng-data
+            kokoro = sherpa_onnx.OfflineTtsKokoroModelConfig(
+                model=os.path.join(model_dir, conf['model']),
+                voices=os.path.join(model_dir, conf['voices']),
+                lexicon=lexicon,
+                tokens=os.path.join(model_dir, conf['tokens']),
+                data_dir=os.path.join(model_dir, conf['data_dir']) if conf.get('data_dir') else '',
+                dict_dir=os.path.join(model_dir, conf['dict_dir']) if conf.get('dict_dir') else '',
+            )
+            model_config = sherpa_onnx.OfflineTtsModelConfig(
+                kokoro=kokoro,
+                provider="cpu",
+                debug=False,
+                num_threads=num_threads,
+            )
+        else:
+            # matcha architecture: acoustic model + vocoder
+            matcha = sherpa_onnx.OfflineTtsMatchaModelConfig(
+                acoustic_model=os.path.join(model_dir, conf['model']),
+                vocoder=os.path.join(model_dir, conf['vocoder']),
+                lexicon=lexicon,
+                tokens=os.path.join(model_dir, conf['tokens']),
+                data_dir=os.path.join(model_dir, conf['data_dir']) if conf.get('data_dir') else '',
+                dict_dir=os.path.join(model_dir, conf['dict_dir']) if conf.get('dict_dir') else '',
+            )
+            model_config = sherpa_onnx.OfflineTtsModelConfig(
                 matcha=matcha,
                 provider="cpu",
                 debug=False,
-                num_threads=1,
-            ),
+                num_threads=num_threads,
+            )
+
+        tts_config = sherpa_onnx.OfflineTtsConfig(
+            model=model_config,
             rule_fsts=rule_fsts,
             max_num_sentences=1,
         )
