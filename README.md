@@ -45,6 +45,8 @@ voxtale/
 │   └── index.html          # 播放器页面
 ├── deploy/
 │   └── voxtale.service    # systemd 单元文件
+├── static/vendor/
+│   └── socket.io.js        # 本地化 socket.io 客户端（离线环境，不依赖 CDN）
 ├── voxtale-client/        # Rust 桌面悬浮客户端源码
 │   ├── Cargo.toml
 │   └── src/                # main.rs / player.rs / bg_detect.rs / reporter.rs / config.rs
