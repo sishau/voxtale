@@ -62,7 +62,12 @@ class sherpa:
             raise ValueError("Please check your config")
         self.tts_server = sherpa_onnx.OfflineTts(tts_config)
 
+    # quote characters leak into the espeak English path and get spoken
+    # as spurious syllables (e.g. closing quotes at sentence ends)
+    _QUOTE_CHARS = ''.join(chr(c) for c in (0x201c, 0x201d, 0x2018, 0x2019, 0x22, 0x27, 0x300c, 0x300d, 0x300e, 0x300f, 0xab, 0xbb, 0x2039, 0x203a))
+
     def synthesize(self, text: str):
+        text = text.translate(str.maketrans('', '', self._QUOTE_CHARS))
         sid = self.conf.get("sid", 0)
         speed = self.conf.get("speed", 1.0)
         audio = self.tts_server.generate(text, sid=sid, speed=speed)
