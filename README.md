@@ -85,7 +85,7 @@ pip install -r requirements.txt
 
 ```yaml
 server:
-  path: ~/workspace/heartale/storage/text/temp.txt  # 待阅读的 txt 文件路径（~ 会自动展开）
+  path: ~/workspace/voxtale/storage/text/temp.txt  # 待阅读的 txt 文件路径（~ 会自动展开）
   encoding: utf-8
 tts:
   model_folder: ./models/matcha-icefall-zh-baker  # 模型目录（相对项目根）
