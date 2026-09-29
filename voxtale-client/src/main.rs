@@ -22,6 +22,7 @@ use egui::{
 };
 use egui::viewport::ResizeDirection;
 use global_hotkey::hotkey::{Code, HotKey, Modifiers};
+use std::sync::atomic::{AtomicBool, AtomicIsize, Ordering};
 use std::sync::mpsc;
 use std::time::{Duration, Instant};
 use windows::core::{w, PCWSTR};
@@ -31,9 +32,11 @@ use windows::Win32::Graphics::Dwm::{
     DWMWCP_DONOTROUND, DWMWA_COLOR_NONE,
 };
 use windows::Win32::UI::Controls::MARGINS;
+use windows::Win32::Foundation::{LPARAM, LRESULT, POINT, WPARAM};
 use windows::Win32::UI::WindowsAndMessaging::{
-    FindWindowW, GetSystemMetrics, IsWindowVisible, SetForegroundWindow, ShowWindow, SM_CXSCREEN,
-    SM_CYSCREEN, SW_HIDE, SW_SHOW,
+    CallWindowProcW, FindWindowW, GetSystemMetrics, GetWindowLongPtrW, IsWindowVisible,
+    SetForegroundWindow, SetWindowLongPtrW, ShowWindow, GWLP_WNDPROC, MINMAXINFO,
+    WM_GETMINMAXINFO, SM_CXSCREEN, SM_CYSCREEN, SW_HIDE, SW_SHOW,
 };
 
 use config::Config;
@@ -58,6 +61,63 @@ fn find_hwnd() -> Option<isize> {
         FindWindowW(PCWSTR::null(), w!("voxtale"))
             .ok()
             .map(|h| h.0 as isize)
+    }
+}
+
+// eframe 0.29 doesn't forward ViewportBuilder::min_inner_size to winit, so an
+// edge-drag is clamped by the system default minimum tracking size (~39px).
+// Subclass the window proc and declare our own minimum in WM_GETMINMAXINFO.
+static SUBCLASSED: AtomicBool = AtomicBool::new(false);
+static ORIG_WNDPROC: AtomicIsize = AtomicIsize::new(0);
+static MIN_TRACK: AtomicIsize = AtomicIsize::new(0); // packed (w << 16) | h
+
+unsafe extern "system" fn voxtale_wndproc(
+    hwnd: windows::Win32::Foundation::HWND,
+    msg: u32,
+    wparam: WPARAM,
+    lparam: LPARAM,
+) -> LRESULT {
+    if msg == WM_GETMINMAXINFO {
+        let packed = MIN_TRACK.load(Ordering::Relaxed);
+        if packed != 0 {
+            unsafe {
+                let mmi = lparam.0 as *mut MINMAXINFO;
+                (*mmi).ptMinTrackSize = POINT {
+                    x: (packed >> 16) as i32,
+                    y: (packed & 0xffff) as i32,
+                };
+            }
+            return LRESULT(0);
+        }
+    }
+    unsafe {
+        type WndProc =
+            unsafe extern "system" fn(windows::Win32::Foundation::HWND, u32, WPARAM, LPARAM) -> LRESULT;
+        CallWindowProcW(
+            Some(std::mem::transmute::<isize, WndProc>(
+                ORIG_WNDPROC.load(Ordering::Relaxed),
+            )),
+            hwnd,
+            msg,
+            wparam,
+            lparam,
+        )
+    }
+}
+
+fn subclass_min_track() {
+    if SUBCLASSED.load(Ordering::Relaxed) {
+        return;
+    }
+    let Some(hwnd) = find_hwnd() else { return };
+    unsafe {
+        let h = windows::Win32::Foundation::HWND(hwnd as *mut _);
+        let orig = GetWindowLongPtrW(h, GWLP_WNDPROC);
+        let packed = (((MIN_W as i32) & 0xffff) << 16) | ((MIN_H as i32) & 0xffff);
+        MIN_TRACK.store(packed as isize, Ordering::Relaxed);
+        ORIG_WNDPROC.store(orig, Ordering::Relaxed);
+        SetWindowLongPtrW(h, GWLP_WNDPROC, voxtale_wndproc as *const () as usize as isize);
+        SUBCLASSED.store(true, Ordering::Relaxed);
     }
 }
 
@@ -332,6 +392,8 @@ fn set_fonts(ctx: &egui::Context) {
 
 impl eframe::App for App {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+        subclass_min_track();
+
         // ---- 播放器事件 ----
         while let Ok(ev) = self.player.events_rx.try_recv() {
             match ev {
