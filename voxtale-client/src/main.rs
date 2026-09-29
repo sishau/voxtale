@@ -4,7 +4,7 @@
 //! - 界面低调: 半透明圆角面板, 中性灰字色 (不与背景完全相反), A 按钮重新采背景调字色
 //! - 播放与 web 端一致: 预取 3 段 / 文本随块播放同步 / 长文本分页轮播 / 关闭时上报进度
 //! - 服务器地址与窗口位置存 exe 同目录 config.json
-//! - 全局热键 Ctrl+Alt+H 隐藏/显示; 边缘拖拽缩放 (winit 无边框可缩放原生支持),
+//! - 全局热键 Ctrl+Alt+H 隐藏/显示; 边缘拖拽缩放采用编程式 SetWindowPos (逐帧跟随指针),
 //!   空白处拖动移动 (StartDrag), 关闭即刻销毁窗口 + 后台收尾
 
 #![cfg_attr(all(windows, not(debug_assertions)), windows_subsystem = "windows")]
@@ -32,11 +32,12 @@ use windows::Win32::Graphics::Dwm::{
     DWMWCP_DONOTROUND, DWMWA_COLOR_NONE,
 };
 use windows::Win32::UI::Controls::MARGINS;
-use windows::Win32::Foundation::{LPARAM, LRESULT, POINT, WPARAM};
+use windows::Win32::Foundation::{LPARAM, LRESULT, POINT, RECT, WPARAM};
 use windows::Win32::UI::WindowsAndMessaging::{
-    CallWindowProcW, FindWindowW, GetSystemMetrics, GetWindowLongPtrW, IsWindowVisible,
-    SetForegroundWindow, SetWindowLongPtrW, ShowWindow, GWLP_WNDPROC, MINMAXINFO,
-    WM_GETMINMAXINFO, SM_CXSCREEN, SM_CYSCREEN, SW_HIDE, SW_SHOW,
+    CallWindowProcW, FindWindowW, GetCursorPos, GetSystemMetrics, GetWindowLongPtrW,
+    GetWindowRect, IsWindowVisible, SetForegroundWindow, SetWindowLongPtrW, SetWindowPos,
+    ShowWindow, GWLP_WNDPROC, MINMAXINFO, SWP_NOACTIVATE, SWP_NOZORDER, WM_GETMINMAXINFO,
+    SM_CXSCREEN, SM_CYSCREEN, SW_HIDE, SW_SHOW,
 };
 
 use config::Config;
@@ -64,9 +65,10 @@ fn find_hwnd() -> Option<isize> {
     }
 }
 
-// eframe 0.29 doesn't forward ViewportBuilder::min_inner_size to winit, so an
-// edge-drag is clamped by the system default minimum tracking size (~39px).
-// Subclass the window proc and declare our own minimum in WM_GETMINMAXINFO.
+// eframe 0.29 doesn't forward ViewportBuilder::min_inner_size to winit. Edge
+// resizing is now done programmatically (see ResizeDrag), which bypasses the
+// system's ~39px minimum-height floor in the modal sizing loop entirely; the
+// subclass stays as a guard so any stray system sizing path honors 340x18.
 static SUBCLASSED: AtomicBool = AtomicBool::new(false);
 static ORIG_WNDPROC: AtomicIsize = AtomicIsize::new(0);
 static MIN_TRACK: AtomicIsize = AtomicIsize::new(0); // packed (w << 16) | h
@@ -118,6 +120,28 @@ fn subclass_min_track() {
         ORIG_WNDPROC.store(orig, Ordering::Relaxed);
         SetWindowLongPtrW(h, GWLP_WNDPROC, voxtale_wndproc as *const () as usize as isize);
         SUBCLASSED.store(true, Ordering::Relaxed);
+    }
+}
+
+/// 编程式边缘缩放状态: 逐帧 GetCursorPos 增量 + SetWindowPos 跟随指针。
+/// 不走系统模态缩放循环 — 实测 Win11 该循环对最小高度有 ~39px 的硬限制,
+/// WM_GETMINMAXINFO 与窗口样式都无法突破; SetWindowPos 不受限 (Python 版同机制做到 28px)。
+struct ResizeDrag {
+    dir: ResizeDirection,
+    rect: (i32, i32, i32, i32), // 物理 px: left, top, right, bottom
+    last: (i32, i32),           // 上一帧光标物理坐标
+}
+
+fn dir_cursor(dir: ResizeDirection) -> CursorIcon {
+    match dir {
+        ResizeDirection::NorthWest => CursorIcon::ResizeNorthWest,
+        ResizeDirection::NorthEast => CursorIcon::ResizeNorthEast,
+        ResizeDirection::SouthWest => CursorIcon::ResizeSouthWest,
+        ResizeDirection::SouthEast => CursorIcon::ResizeSouthEast,
+        ResizeDirection::North => CursorIcon::ResizeNorth,
+        ResizeDirection::South => CursorIcon::ResizeSouth,
+        ResizeDirection::West => CursorIcon::ResizeWest,
+        ResizeDirection::East => CursorIcon::ResizeEast,
     }
 }
 
@@ -178,6 +202,8 @@ struct App {
     bg_tx: mpsc::Sender<Option<f32>>,
     /// 边缘缩放命中时本帧应显示的光标 (CentralPanel 闭合后统一写入 output, 覆盖拖拽 widget 的 Grab)
     resize_cursor: Option<CursorIcon>,
+    /// 进行中的编程式边缘缩放 (None = 未在缩放)
+    resize_drag: Option<ResizeDrag>,
 }
 
 impl App {
@@ -212,6 +238,7 @@ impl App {
             visible: true,
             bg_rx,
             resize_cursor: None,
+            resize_drag: None,
             bg_tx,
         }
     }
@@ -394,6 +421,79 @@ impl eframe::App for App {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         subclass_min_track();
 
+        // ---- 编程式边缘缩放: 松开即结束; 按住时逐帧跟随指针 ----
+        if let Some(d) = self.resize_drag.as_mut() {
+            if !ctx.input(|i| i.pointer.primary_down()) {
+                self.resize_drag = None;
+            } else {
+                let mut pt = POINT::default();
+                unsafe {
+                    let _ = GetCursorPos(&mut pt);
+                }
+                let dx = pt.x - d.last.0;
+                let dy = pt.y - d.last.1;
+                d.last = (pt.x, pt.y);
+                let (mut l, mut t, mut r, mut b) = d.rect;
+                let north = matches!(
+                    d.dir,
+                    ResizeDirection::North | ResizeDirection::NorthWest | ResizeDirection::NorthEast
+                );
+                let south = matches!(
+                    d.dir,
+                    ResizeDirection::South | ResizeDirection::SouthWest | ResizeDirection::SouthEast
+                );
+                let west = matches!(
+                    d.dir,
+                    ResizeDirection::West | ResizeDirection::NorthWest | ResizeDirection::SouthWest
+                );
+                let east = matches!(
+                    d.dir,
+                    ResizeDirection::East | ResizeDirection::NorthEast | ResizeDirection::SouthEast
+                );
+                if west {
+                    l += dx;
+                }
+                if east {
+                    r += dx;
+                }
+                if north {
+                    t += dy;
+                }
+                if south {
+                    b += dy;
+                }
+                // 下限钳制: 高度/宽度不足时锚定对边
+                if b - t < MIN_H as i32 {
+                    if north {
+                        t = b - MIN_H as i32;
+                    } else {
+                        b = t + MIN_H as i32;
+                    }
+                }
+                if r - l < MIN_W as i32 {
+                    if west {
+                        l = r - MIN_W as i32;
+                    } else {
+                        r = l + MIN_W as i32;
+                    }
+                }
+                d.rect = (l, t, r, b);
+                if let Some(hwnd) = find_hwnd() {
+                    unsafe {
+                        let _ = SetWindowPos(
+                            windows::Win32::Foundation::HWND(hwnd as *mut _),
+                            None,
+                            l,
+                            t,
+                            r - l,
+                            b - t,
+                            SWP_NOZORDER | SWP_NOACTIVATE,
+                        );
+                    }
+                }
+            }
+        }
+
         // ---- 播放器事件 ----
         while let Ok(ev) = self.player.events_rx.try_recv() {
             match ev {
@@ -505,11 +605,10 @@ impl eframe::App for App {
                     self.palette.fill,
                     Stroke::NONE,
                 )));
-                // ---- 边缘缩放命中检测 (无边框窗口 winit 不做 hit-test, 必须自己来) ----
-                // 命中带 = 窗口四边 6 物理 px; 命中时显示系统缩放光标, 按下即进入 Windows
-                // 模态缩放循环 (BeginResize -> winit drag_resize_window -> WM_NCLBUTTONDOWN),
-                // 光标在模态循环内由系统接管, 缩放过程中字号随 ppp 自动跟随
-                let edge = RESIZE_EDGE_PX / ppp_ui;
+                // ---- 边缘缩放命中检测 (无边框窗口全客户区, winit/系统不做命中) ----
+                // 命中带 = 窗口四边 6 物理 px (不超过高度 1/4, 保证小窗口中间仍可拖动/点击);
+                // 命中时显示系统缩放光标, 按下进入编程式缩放 (ResizeDrag, 见结构体注释)
+                let edge = (RESIZE_EDGE_PX / ppp_ui).min(rect.height() * 0.25);
                 self.resize_cursor = None;
                 let mut in_edge = false;
                 if let Some(p) = ctx.input(|i| i.pointer.latest_pos()) {
@@ -530,8 +629,22 @@ impl eframe::App for App {
                             _ => (ResizeDirection::East, CursorIcon::ResizeEast),
                         };
                         self.resize_cursor = Some(icon);
-                        if ctx.input(|i| i.pointer.primary_pressed()) {
-                            ctx.send_viewport_cmd(ViewportCommand::BeginResize(dir));
+                        if ctx.input(|i| i.pointer.primary_pressed()) && self.resize_drag.is_none() {
+                            if let Some(hwnd) = find_hwnd() {
+                                let (mut rc, mut cpt) = (RECT::default(), POINT::default());
+                                unsafe {
+                                    let _ = GetWindowRect(
+                                        windows::Win32::Foundation::HWND(hwnd as *mut _),
+                                        &mut rc,
+                                    );
+                                    let _ = GetCursorPos(&mut cpt);
+                                }
+                                self.resize_drag = Some(ResizeDrag {
+                                    dir,
+                                    rect: (rc.left, rc.top, rc.right, rc.bottom),
+                                    last: (cpt.x, cpt.y),
+                                });
+                            }
                         }
                     }
                 }
@@ -674,8 +787,13 @@ impl eframe::App for App {
                 }
             });
         // 边缘缩放光标: 在 show() 之后写入, 是本帧对 cursor_icon 的最终写入,
-        // 覆盖 panel_drag 拖拽 widget 的 Grab 光标
-        if let Some(icon) = self.resize_cursor.take() {
+        // 覆盖 panel_drag 拖拽 widget 的 Grab 光标; 缩放进行中强制保持方向光标
+        // (拖快了指针会冲出命中带, 命中检测不再点亮)
+        let icon = self
+            .resize_cursor
+            .take()
+            .or_else(|| self.resize_drag.as_ref().map(|d| dir_cursor(d.dir)));
+        if let Some(icon) = icon {
             ctx.output_mut(|o| o.cursor_icon = icon);
         }
         // 轮播计时 + 事件轮询需要持续重绘
