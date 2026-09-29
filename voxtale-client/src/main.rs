@@ -41,7 +41,7 @@ use player::{Player, PlayerEvent};
 
 // 逻辑尺寸基准 (pixels_per_point = 物理高 / BASE_H, 所有逻辑尺寸随窗口整体缩放)
 const BASE_H: f32 = 110.0;
-const TEXT_SIZE: f32 = 40.0; // h=110 时 40 物理px; 提大以收紧文字与上下边框的留白 (h=26 时约 9.5px)
+const TEXT_SIZE: f32 = 46.0; // h=110 时 46 物理px (h=28 时约 11.7px)
 const BTN_SIZE: f32 = 39.0; // 按钮 39, 图标 29 (Python: fs_btn+pad / fs_btn)
 const ICON_SIZE: f32 = 29.0;
 const MARGIN_X: f32 = 12.0; // 左右边距 (上下边距由面板内垂直居中自然达成, 约等效 2px)
