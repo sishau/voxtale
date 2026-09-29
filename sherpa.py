@@ -3,6 +3,7 @@
 
 import io
 import os
+import re
 
 import sherpa_onnx
 import soundfile as sf
@@ -66,11 +67,37 @@ class sherpa:
     # as spurious syllables (e.g. closing quotes at sentence ends)
     _QUOTE_CHARS = ''.join(chr(c) for c in (0x201c, 0x201d, 0x2018, 0x2019, 0x22, 0x27, 0x300c, 0x300d, 0x300e, 0x300f, 0xab, 0xbb, 0x2039, 0x203a))
 
+    # decorative brackets (lenticular/fullwidth) carry no prosody and only
+    # leak into the espeak path; runs of 2+ punctuation chars make espeak-ng
+    # vocalize an "empty clause" artifact (~0.7s, e.g. trailing '】' after
+    # '!', or '！？' mid-text); punctuation at chunk head/tail does the same
+    _BRACKETS = ''.join(chr(c) for c in (0x3010, 0x3011, 0xFF08, 0xFF09,
+                                         0x300A, 0x300B, 0x3008, 0x3009,
+                                         0x3014, 0x3015))
+    _PUNCT = ''.join(chr(c) for c in (0xFF0C, 0x3002, 0xFF01, 0xFF1F, 0xFF1B,
+                                      0xFF1A, 0x3001, 0x2026, 0x2014, 0xB7)) \
+        + ',.!?:;()[]<>{}~@#^&*+=|/'
+    _ENDER = ''.join(chr(c) for c in (0x3002, 0xFF01, 0xFF1F, 0x2026)) + '!?'
+
+    @staticmethod
+    def _clean_punct(text: str) -> str:
+        text = text.translate(str.maketrans('', '', sherpa._BRACKETS))
+        # collapse punct runs to their last char (it governs the contour)
+        text = re.sub('[' + re.escape(sherpa._PUNCT) + ']{2,}',
+                      lambda m: m.group(0)[-1], text)
+        text = text.lstrip(sherpa._PUNCT)
+        if not re.search('[' + sherpa._ENDER + ']$', text):
+            text = text.rstrip(sherpa._PUNCT)
+        return text
+
     def synthesize(self, text: str):
         text = text.translate(str.maketrans('', '', self._QUOTE_CHARS))
         # full-width colon is spoken as the word 'colon' by espeak when the
         # chunk contains ASCII (e.g. Q币); a comma keeps the prosodic pause
         text = text.replace(chr(0xFF1A), chr(0xFF0C))
+        text = self._clean_punct(text)
+        if not text:
+            return None
         sid = self.conf.get("sid", 0)
         speed = self.conf.get("speed", 1.0)
         audio = self.tts_server.generate(text, sid=sid, speed=speed)
