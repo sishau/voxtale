@@ -68,6 +68,9 @@ class sherpa:
 
     def synthesize(self, text: str):
         text = text.translate(str.maketrans('', '', self._QUOTE_CHARS))
+        # full-width colon is spoken as the word 'colon' by espeak when the
+        # chunk contains ASCII (e.g. Q币); a comma keeps the prosodic pause
+        text = text.replace(chr(0xFF1A), chr(0xFF0C))
         sid = self.conf.get("sid", 0)
         speed = self.conf.get("speed", 1.0)
         audio = self.tts_server.generate(text, sid=sid, speed=speed)
