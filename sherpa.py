@@ -90,12 +90,66 @@ class sherpa:
             text = text.rstrip(sherpa._PUNCT)
         return text
 
+    # 无停顿长串会让模型整体加速(实测 ~17%): kokoro 只在 .!?; 处分句, 逗号不分句,
+    # 连续无停顿 token 序列的 duration 预测整体偏短 (表征为"默认语速慢、超长才加速")。
+    # 超过 _RUN_LIMIT 字的无停顿片段自动插逗号, 优先插在虚词后 (贴近自然句读),
+    # 找不到虚词才按长度硬切; 标点良好的文本零改动
+    _RUN_LIMIT = 16
+    _SOFT_BREAK_AFTER = set('的了着呢吧吗啊是也都很又便就还才却和与或但而地得把被向从对让'
+                            '上中下里内外前后间们个这那')
+
+    @staticmethod
+    def _split_run(run: str) -> str:
+        """在单个无停顿片段内按 ~_RUN_LIMIT 字插入逗号。"""
+        def alnum(c):
+            return c.isascii() and c.isalnum()
+
+        limit = sherpa._RUN_LIMIT
+        parts, pos = [], 0
+        while len(run) - pos > limit:
+            window = run[pos:pos + limit]
+            # 从窗口尾部向回找虚词, 在其后下刀 (k>=2 保证前段至少 3 字)
+            cut = None
+            for k in range(len(window) - 1, 1, -1):
+                if window[k] in sherpa._SOFT_BREAK_AFTER:
+                    cut = k + 1
+                    break
+            if cut is None:
+                cut = limit
+            # 避免把 ASCII 单词/数字拦腰切断: 切点落在字母数字段中间则退到段首
+            while 0 < cut < len(run) - pos and alnum(run[pos + cut - 1]) and alnum(run[pos + cut]):
+                cut -= 1
+            parts.append(run[pos:pos + cut])
+            parts.append('，')
+            pos += cut
+        parts.append(run[pos:])
+        return ''.join(parts)
+
+    @classmethod
+    def _soft_break(cls, text: str) -> str:
+        punct = cls._PUNCT + '，。！？；：、…—·“”‘’《》〈〉（）【】〔〕\u3000 \t\n'
+        out = []
+        i, n = 0, len(text)
+        while i < n:
+            j = i
+            while j < n and text[j] not in punct:
+                j += 1
+            run = text[i:j]
+            out.append(run if len(run) <= cls._RUN_LIMIT else cls._split_run(run))
+            if j < n:
+                out.append(text[j])
+            i = j + 1
+        return ''.join(out)
+
     def synthesize(self, text: str):
         text = text.translate(str.maketrans('', '', self._QUOTE_CHARS))
         # full-width colon is spoken as the word 'colon' by espeak when the
         # chunk contains ASCII (e.g. Q币); a comma keeps the prosodic pause
         text = text.replace(chr(0xFF1A), chr(0xFF0C))
         text = self._clean_punct(text)
+        # 无标点长串整体加速: 超长无停顿片段自动补句读逗号 (须在清洗后做,
+        # 括号删除/标点收敛会改变片段边界)
+        text = self._soft_break(text)
         if not text:
             return None
         sid = self.conf.get("sid", 0)
